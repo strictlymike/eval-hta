@@ -1,0 +1,272 @@
+<head>
+	<title>VBScript/JScript Command-Line</title>
+	<hta:application>
+</head>
+
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+'' File:	eval.hta
+'' Created:	7/17/2006
+'' Author:	mikeb 
+''
+'' Modification history:
+'' Date		Author			Desc
+'' ----		------			----
+'' 10/13/16	It's me again	Wow, it's been a while. I missed your tenth
+'' 							birthday too, huh? Well anyway, good thing I put
+'' 							this modification history here, otherwise I
+'' 							wouldn't know how long it's been since I had to
+'' 							work with VBScript. Oh. Wait a minute. Yeah, that's
+'' 							why I'm back. I suspect I'm going to need you for
+'' 							JScript too now. So, I'm just going to go ahead and
+'' 							add that in.
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+<body text="#ffffff" bgcolor="#000000" style="* {font-family: monospace;
+	font-size: 12px;}">
+	<div id="spnResults"></div>
+	<div> <span id="spnEngine">vbscript</span>:\&gt;<input type="text"
+	name="txtInput" onKeyUp="eval_hist_flt()" style="font-family: monospace;
+	font-size: 12px; width: 90%; color: #ffffff; background-color: #000000;
+	border: 0px;"/><button type="submit" name="btnExec"
+	onclick="eval_btnExec()" style="color: #000000; background-color: #000000;
+	border: 0px;"><u>E</u>val</button> </div>
+
+</body>
+
+<script Language="JScript">
+	function JsExecute(cmd) {
+		eval(cmd);
+	}
+</script>
+
+<script Language="VBScript">
+	Option Explicit
+
+	' For command history
+	Dim G_oHistory
+	Dim G_nHistoryIndex
+	Dim G_sAbandonedInput
+	Dim G_sComment_tok
+
+	' For errors
+	Dim oVoice
+	Dim oStream
+
+	' For use within the CUI environment
+	Dim fso
+	Dim wmi
+	Dim shell
+	Dim net
+	Dim dict
+
+	Set wmi = GetObject("winmgmts:")
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	Set shell = CreateObject("WScript.Shell")
+	Set net = CreateObject("WScript.Network")
+	Set dict = CreateObject("Scripting.Dictionary")
+
+	G_sComment_tok = "'"
+
+	Function Window_OnLoad()
+		G_nHistoryIndex = 0
+		Set G_oHistory = CreateObject("Scripting.Dictionary")
+
+		Set oVoice = CreateObject("SAPI.SpVoice")
+		Set oStream = CreateObject("SAPI.SpFileStream.1")
+		Call oStream.Open("C:\windows\media\ding.wav")
+
+		StartLanguage("vbscript")
+
+		Call txtInput.Focus()
+	End Function
+
+	Function eval_HtmlEscape(ByVal str)
+		' Ampersands must be replaced first, before further SGML special
+		' entities (each having ampersands) are inserted into the string.
+		str = Replace(str, "&", "&amp;")
+
+		str = Replace(str, "<", "&lt;")
+		str = Replace(str, ">", "&gt;")
+
+		' Any new HTML tags must be inserted last, after less-than and
+		' greater-than signs have been escaped.
+		str = Replace(str, vbNewLine, "<br/>")
+
+		eval_HtmlEscape = str
+	End Function
+
+	Function WriteLine_bare(ByRef str)
+		spnResults.InnerHTML = spnResults.InnerHTML & str & "<br/>"
+	End Function
+
+	Function WriteHtmlEscaped(ByRef str)
+		Call WriteLine_bare(eval_HtmlEscape(str))
+	End Function
+
+	Function Echo(ByRef str)
+		spnResults.InnerHTML = spnResults.InnerHTML & _
+			"<div style=""color: green;"">" & G_sComment_tok & " " & str & _
+			"</div>"
+	End Function
+
+	Function Clip(ByRef str)
+		Call Echo("Copying to clipboard: " & str)
+		Call window.clipboardData.setData("text", str)
+	End Function
+
+	Function StartLanguage(ByRef lang)
+		WriteHtmlEscaped("<script language='" & lang & "'>")
+	End Function
+
+	Function SwitchLang(ByRef newlang)
+		' The script tag below is seen as an un-terminated string constant if
+		' it is not broken up, ostensibly because the IE HTML parser doesn't
+		' parse script so as to realize that the tag is occurring within a
+		' string. Hence the seemingly superfluous string concatenations below.
+		If newlang = "vbscript" and spnEngine.InnerHTML = "jscript" Then
+			G_sComment_tok = "'"
+			WriteHtmlEscaped("</script" & ">")
+			StartLanguage("vbscript")
+			spnEngine.InnerHTML = "vbscript"
+		ElseIf newlang = "jscript" and spnEngine.InnerHTML = "vbscript" Then
+			G_sComment_tok = "//"
+			WriteHtmlEscaped("</script" & ">")
+			StartLanguage("jscript")
+			spnEngine.InnerHTML = "jscript"
+		End If
+	End Function
+
+	Function Js()
+		SwitchLang("jscript")
+	End Function
+
+	Function Vbs()
+		SwitchLang("vbscript")
+	End Function
+
+	Function Cls()
+		spnResults.InnerHTML = ""
+	End Function
+
+	Function Help()
+		WriteHtmlEscaped(G_sComment_tok & " Functions:")
+		WriteHtmlEscaped(G_sComment_tok & " Clip() - Copy to clipboard")
+		WriteHtmlEscaped(G_sComment_tok & " Echo() - Print to console")
+		WriteHtmlEscaped(G_sComment_tok & " Cls() - Clear screen")
+
+		WriteHtmlEscaped(G_sComment_tok & " Commands:")
+		WriteHtmlEscaped(G_sComment_tok & " jscript - Switch to JScript")
+		WriteHtmlEscaped(G_sComment_tok & " vbscript - Switch to VBScript")
+		WriteHtmlEscaped(G_sComment_tok & " exit/quit/bye   Terminate")
+	End Function
+
+	Function eval_btnExec()
+		Dim cmd
+		Dim utcmd
+		Dim origcmd
+
+		origcmd = txtInput.Value
+		cmd = origcmd
+
+		' The prompt is omitted when reproducing the command so that you
+		' can just copy and paste everything into a script without removing
+		' extraneous prompts.
+
+		If (cmd <> vbNullString) Then
+			Call G_oHistory.Add(G_oHistory.Count, cmd)
+			G_nHistoryIndex = G_oHistory.Count
+		End If
+		G_sAbandonedInput = vbNullString
+
+		utcmd = UCase(Trim(cmd))
+
+		If utcmd = "HELP" Then
+			cmd = "Call Help()"
+			origcmd = "' " + origcmd
+		ElseIf utcmd = "CLS" Then
+			cmd = "Call Cls()"
+			origcmd = "' " + origcmd
+		ElseIf utcmd = "EXIT" Then
+			Call window.Close()
+		ElseIf utcmd = "QUIT" Then
+			Call window.Close()
+		ElseIf utcmd = "BYE" Then
+			Call window.Close()
+		ElseIf utcmd = "JSCRIPT" Then
+			Call Js()
+			cmd = ""
+			utcmd = ""
+			origcmd = "' " + origcmd
+		ElseIf utcmd = "VBSCRIPT" Then
+			Call Vbs()
+			cmd = ""
+			utcmd = ""
+			origcmd = "' " + origcmd
+		End If
+
+		If cmd <> vbNullString Then
+			Call WriteHtmlEscaped(origcmd)
+		End If
+		Call txtInput.Focus()
+
+		On Error Resume Next
+
+		If cmd <> vbNullString Then
+			If spnEngine.InnerHTML = "vbscript" Then
+				Execute(cmd)
+			Else
+				JsExecute(cmd)
+			End If
+		End If
+
+		If Err Then
+			spnResults.InnerHTML = spnResults.InnerHTML & _
+				"<div style=""font-weight: bold; color: red;"">" & _
+				G_sComment_tok & " &gt;&gt;&gt; Error # " & Err.Number & _
+				": " & Err.Description & "</div>"
+			' Call eval_Ding()
+			Call Err.Clear()
+		End If
+		On Error Goto 0
+
+		txtInput.Value = ""
+		' Call txtInput.Select()
+	End Function
+
+	Function eval_hist_flt()
+		' Up
+		If window.event.keyCode = 38 Then
+			If G_nHistoryIndex > 0 Then
+				If (G_nHistoryIndex = G_oHistory.Count) Then
+					G_sAbandonedInput = txtInput.Value
+				End If
+				G_nHistoryIndex = G_nHistoryIndex - 1
+				txtInput.Value = G_oHistory.Item(G_nHistoryIndex)
+			Else
+				Call eval_Ding()
+			End If
+		End If
+
+		' Down
+		If window.event.keyCode = 40 Then
+			If G_nHistoryIndex < G_oHistory.Count Then
+				G_nHistoryIndex = G_nHistoryIndex + 1
+				txtInput.Value = G_oHistory.Item(G_nHistoryIndex)
+			Else
+				txtInput.Value = G_sAbandonedInput
+				Call eval_Ding()
+			End If
+		End If
+	End Function
+
+	Function eval_Ding()
+		Call window.setTimeout("eval_do_Ding()", 1)
+	End Function
+
+	Function eval_do_Ding()
+		Call oVoice.SpeakStream(oStream)
+		Set oStream = CreateObject("SAPI.SpFileStream.1")
+		Call oStream.Open("C:\windows\media\ding.wav")
+	End Function
+
+</script>
